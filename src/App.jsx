@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { 
   Search, Bell, MessageSquare, Plus, Download, 
-  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send, MessageCircle, User, Trash2, Eye, EyeOff
+  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send, MessageCircle, User, Trash2, Eye, EyeOff, Calendar, Clock
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -26,6 +26,20 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// Aniq sana va soatni chiroyli formatda chiqarish funksiyasi
+const formatExactDateTime = (timestamp) => {
+  if (!timestamp) return 'Hozirgina';
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  
+  const day = String(date.getDate()).padStart(2, '0');
+  const months = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+  const monthName = months[date.getMonth()];
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${day}-${monthName}, ${hours}:${minutes}`;
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [pins, setPins] = useState([]);
@@ -37,7 +51,7 @@ export default function App() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const [isAnonymousPost, setIsAnonymousPost] = useState(false); // Anonim yoki ochiq tanlovi
+  const [isAnonymousPost, setIsAnonymousPost] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const [commentText, setCommentText] = useState('');
@@ -121,7 +135,6 @@ export default function App() {
 
     setIsUploading(true);
 
-    // Foydalanuvchi tanloviga qarab ism va suratni belgilash
     const authorName = isAnonymousPost 
       ? 'Anonim' 
       : (user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'));
@@ -201,7 +214,7 @@ export default function App() {
       text: commentText.trim(),
       userName: user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'),
       userPhoto: user?.photoURL || '',
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      createdAt: formatExactDateTime(new Date())
     };
 
     try {
@@ -371,7 +384,7 @@ export default function App() {
                     {activeTab === 'my-pins' && 'Men yuklagan rasmlar'}
                   </h1>
                   {activeTab === 'my-pins' && (
-                    <p className="text-xs text-zinc-500 mt-1">Siz tomoningizdan joylangan rasmlar (anonim yoki ochiq)</p>
+                    <p className="text-xs text-zinc-500 mt-1">Siz tomoningizdan joylangan rasmlar ro'yxati</p>
                   )}
                 </div>
                 <span className="text-sm text-zinc-500 font-medium">{displayedPins.length} ta pin</span>
@@ -455,7 +468,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Kim yuklagani haqida */}
+                        {/* Kim yuklagani va ANIQ VAQTI */}
                         <div className="p-2.5 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             {pin.isAnonymous ? (
@@ -469,12 +482,20 @@ export default function App() {
                                 {pin.userName?.[0] || 'U'}
                               </div>
                             )}
-                            <span className="text-xs font-medium text-zinc-700 truncate max-w-[100px]">
-                              {pin.userName}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-semibold text-zinc-800 truncate max-w-[95px]">
+                                {pin.userName}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 font-medium">
+                                {formatExactDateTime(pin.createdAt)}
+                              </span>
+                            </div>
                           </div>
+
                           {isOwner && (
-                            <span className="text-[10px] bg-zinc-100 text-zinc-500 font-bold px-1.5 py-0.5 rounded">Siz</span>
+                            <span className="text-[10px] bg-zinc-100 text-zinc-600 font-bold px-1.5 py-0.5 rounded">
+                              Siz
+                            </span>
                           )}
                         </div>
                       </div>
@@ -496,7 +517,7 @@ export default function App() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Tizim yangilandi</p>
-                    <p className="text-xs text-zinc-500">Anonim yuklash funksiyasi qo'shildi!</p>
+                    <p className="text-xs text-zinc-500">Aniq sana va vaqt ko'rsatkichi qo'shildi!</p>
                   </div>
                 </div>
                 <span className="text-xs text-zinc-400">Hozirgina</span>
@@ -546,7 +567,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* Rasm qo'shish oynasi (SHAXSINI OCHIQ QILISH YOKI ANONIM TANLOVI BILAN) */}
+      {/* Rasm qo'shish oynasi */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl relative">
@@ -609,7 +630,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Shaxsni ko'rsatish yoki anonim qilish tanlovi */}
+              {/* Shaxs tanlovi */}
               <div className="p-3 bg-zinc-50 rounded-2xl border border-zinc-200">
                 <span className="block text-xs font-bold text-zinc-700 mb-2">
                   Shaxsingiz qanday ko'rinsin?
@@ -641,11 +662,6 @@ export default function App() {
                     Anonim (Maxfiy)
                   </button>
                 </div>
-                <p className="text-[11px] text-zinc-400 mt-2 text-center">
-                  {isAnonymousPost 
-                    ? "Ismingiz va profilingiz yashiriladi, 'Anonim' deb chiqadi." 
-                    : `Profilingiz (${user?.displayName || 'Ismingiz'}) ochiq ko'rsatiladi.`}
-                </p>
               </div>
 
               <button 
@@ -670,10 +686,12 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row shadow-2xl"
           >
+            {/* Rasm */}
             <div className="md:w-3/5 bg-zinc-950 flex items-center justify-center p-2">
               <img src={selectedPin.imageUrl} alt={selectedPin.title} className="max-h-[82vh] w-full object-contain rounded-xl" />
             </div>
 
+            {/* O'ng panel */}
             <div className="md:w-2/5 p-6 flex flex-col justify-between h-[82vh] bg-white">
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center mb-4">
@@ -720,26 +738,35 @@ export default function App() {
                   <p className="text-zinc-600 text-xs mb-3">{selectedPin.description}</p>
                 )}
 
-                <div className="flex items-center gap-3 py-3 border-y border-zinc-100 my-2">
-                  {selectedPin.isAnonymous ? (
-                    <div className="w-9 h-9 rounded-full bg-zinc-900 text-white flex items-center justify-center">
-                      <EyeOff className="w-4 h-4" />
+                {/* Muallif va Aniq Sana/Soat */}
+                <div className="flex items-center justify-between py-3 border-y border-zinc-100 my-2">
+                  <div className="flex items-center gap-3">
+                    {selectedPin.isAnonymous ? (
+                      <div className="w-9 h-9 rounded-full bg-zinc-900 text-white flex items-center justify-center">
+                        <EyeOff className="w-4 h-4" />
+                      </div>
+                    ) : selectedPin.userPhoto ? (
+                      <img src={selectedPin.userPhoto} alt={selectedPin.userName} className="w-9 h-9 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 font-bold flex items-center justify-center">
+                        {selectedPin.userName?.[0] || 'U'}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-bold text-zinc-800">{selectedPin.userName}</p>
+                      <p className="text-[11px] text-zinc-400">
+                        {selectedPin.isAnonymous ? "Maxfiy muallif" : "Muallif"}
+                      </p>
                     </div>
-                  ) : selectedPin.userPhoto ? (
-                    <img src={selectedPin.userPhoto} alt={selectedPin.userName} className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 font-bold flex items-center justify-center">
-                      {selectedPin.userName?.[0] || 'U'}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm font-bold text-zinc-800">{selectedPin.userName}</p>
-                    <p className="text-[11px] text-zinc-400">
-                      {selectedPin.isAnonymous ? "Maxfiy yuklangan" : "Muallif"}
-                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1.5 rounded-xl border border-zinc-100">
+                    <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{formatExactDateTime(selectedPin.createdAt)}</span>
                   </div>
                 </div>
 
+                {/* Muhokama Chati */}
                 <div className="flex-1 overflow-y-auto pr-1 space-y-3 mt-2">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     Muhokama ({selectedPin.comments?.length || 0})
