@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { 
   Search, Bell, MessageSquare, Plus, Download, 
-  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send
+  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send, MessageCircle
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -35,10 +35,14 @@ export default function App() {
   const [selectedPin, setSelectedPin] = useState(null);
 
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
-  // Namuna xabarlar holati
+  // Izoh (muhokama) uchun holat
+  const [commentText, setCommentText] = useState('');
+
+  // Xabarlar bo'limi holati
   const [messages, setMessages] = useState([
     { id: 1, sender: 'Pinterest Bot', text: 'Pinterest Uz platformasiga xush kelibsiz!', time: '14:20' }
   ]);
@@ -58,7 +62,14 @@ export default function App() {
   useEffect(() => {
     const q = query(collection(db, 'pins'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
-      setPins(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const pinsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPins(pinsData);
+      
+      // Agar ochiq turgan rasm bo'lsa, uning izohlarini ham yangilab borish
+      setSelectedPin(prev => {
+        if (!prev) return null;
+        return pinsData.find(p => p.id === prev.id) || prev;
+      });
     }, (err) => console.log("Firestore xatosi:", err));
 
     return () => unsub();
@@ -115,13 +126,17 @@ export default function App() {
     try {
       await addDoc(collection(db, 'pins'), {
         title: title || 'Nomsiz rasm',
+        description: description || '',
         imageUrl: imageUrl,
         userId: user?.uid || 'anon',
-        userName: user?.displayName || 'Foydalanuvchi',
+        userName: user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'),
+        userPhoto: user?.photoURL || '',
         saves: [],
+        comments: [], // Muhokama chatlari uchun massiv
         createdAt: serverTimestamp()
       });
       setTitle('');
+      setDescription('');
       setImageUrl('');
       setIsAddModalOpen(false);
       setActiveTab('feed');
@@ -156,6 +171,30 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  // Muhokamaga izoh qo'shish
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    if (!commentText.trim() || !selectedPin) return;
+
+    const newComment = {
+      id: Date.now().toString(),
+      text: commentText.trim(),
+      userName: user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'),
+      userPhoto: user?.photoURL || '',
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    try {
+      const pinRef = doc(db, 'pins', selectedPin.id);
+      await updateDoc(pinRef, {
+        comments: arrayUnion(newComment)
+      });
+      setCommentText('');
+    } catch (err) {
+      alert("Izoh qoldirishda xatolik: " + err.message);
+    }
+  };
+
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -185,7 +224,6 @@ export default function App() {
       {/* Chap Yon Panel */}
       <aside className="w-16 md:w-20 border-r border-zinc-200 flex flex-col items-center py-5 justify-between flex-shrink-0 z-20">
         <div className="flex flex-col items-center gap-5 w-full">
-          {/* Logo - Bosh sahifaga qaytaradi */}
           <div 
             onClick={() => setActiveTab('feed')}
             className="w-11 h-11 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-2xl shadow-sm cursor-pointer hover:scale-105 transition"
@@ -194,7 +232,6 @@ export default function App() {
             P
           </div>
 
-          {/* Bosh sahifa tugmasi */}
           <button 
             onClick={() => setActiveTab('feed')} 
             className={`p-3 rounded-2xl transition ${activeTab === 'feed' ? 'bg-zinc-950 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
@@ -203,7 +240,6 @@ export default function App() {
             <Home className="w-5 h-5" />
           </button>
 
-          {/* Saqlangan rasmlar */}
           <button 
             onClick={() => setActiveTab('saved')} 
             className={`p-3 rounded-2xl transition ${activeTab === 'saved' ? 'bg-zinc-950 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
@@ -212,7 +248,6 @@ export default function App() {
             <Bookmark className="w-5 h-5" />
           </button>
 
-          {/* Rasm yuklash oynasi */}
           <button 
             onClick={() => setIsAddModalOpen(true)}
             className="p-3 rounded-2xl hover:bg-zinc-100 text-zinc-600 transition"
@@ -221,7 +256,6 @@ export default function App() {
             <Plus className="w-6 h-6 stroke-[2.5]" />
           </button>
 
-          {/* Bildirishnomalar */}
           <button 
             onClick={() => setActiveTab('notifications')}
             className={`p-3 rounded-2xl relative transition ${activeTab === 'notifications' ? 'bg-zinc-950 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
@@ -231,7 +265,6 @@ export default function App() {
             <span className="w-2 h-2 rounded-full bg-red-600 absolute top-2 right-2"></span>
           </button>
 
-          {/* Xabarlar */}
           <button 
             onClick={() => setActiveTab('messages')}
             className={`p-3 rounded-2xl transition ${activeTab === 'messages' ? 'bg-zinc-950 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
@@ -241,7 +274,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* Profil / Kirish */}
         <div>
           {user && !user.isAnonymous ? (
             <button 
@@ -267,7 +299,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Asosiy Ish Maydoni */}
+      {/* Asosiy qism */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Header */}
@@ -295,10 +327,9 @@ export default function App() {
           </div>
         </header>
 
-        {/* Kontent qismi */}
+        {/* Kontent */}
         <main className="flex-1 overflow-y-auto px-6 py-6">
           
-          {/* 1. Lenta yoki Saqlanganlar sahifasi */}
           {(activeTab === 'feed' || activeTab === 'saved') && (
             <div>
               <div className="mb-6 flex items-center justify-between">
@@ -332,38 +363,60 @@ export default function App() {
                       <div 
                         key={pin.id}
                         onClick={() => setSelectedPin(pin)}
-                        className="relative group rounded-2xl overflow-hidden cursor-zoom-in bg-zinc-100 break-inside-avoid shadow-sm hover:shadow-md transition"
+                        className="relative group rounded-2xl overflow-hidden cursor-zoom-in bg-zinc-100 break-inside-avoid shadow-sm hover:shadow-md transition flex flex-col"
                       >
-                        <img 
-                          src={pin.imageUrl} 
-                          alt={pin.title} 
-                          className="w-full object-cover rounded-2xl group-hover:brightness-90 transition"
-                        />
+                        <div className="relative">
+                          <img 
+                            src={pin.imageUrl} 
+                            alt={pin.title} 
+                            className="w-full object-cover rounded-2xl group-hover:brightness-95 transition"
+                          />
 
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-between pointer-events-none">
-                          <div className="flex justify-end pointer-events-auto">
-                            <button 
-                              onClick={(e) => handleToggleSave(pin, e)}
-                              className={`px-4 py-2 rounded-full font-bold text-sm shadow transition ${
-                                isSaved ? 'bg-zinc-950 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
-                              }`}
-                            >
-                              {isSaved ? 'Saqlandi' : 'Saqlash'}
-                            </button>
-                          </div>
+                          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-between pointer-events-none rounded-2xl">
+                            <div className="flex justify-end pointer-events-auto">
+                              <button 
+                                onClick={(e) => handleToggleSave(pin, e)}
+                                className={`px-4 py-2 rounded-full font-bold text-xs shadow transition ${
+                                  isSaved ? 'bg-zinc-950 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
+                                }`}
+                              >
+                                {isSaved ? 'Saqlandi' : 'Saqlash'}
+                              </button>
+                            </div>
 
-                          <div className="flex justify-between items-center pointer-events-auto">
-                            <span className="text-white text-xs font-semibold drop-shadow truncate max-w-[120px]">
-                              {pin.title}
-                            </span>
-                            <button 
-                              onClick={(e) => handleDownload(pin.imageUrl, e)}
-                              className="p-2 rounded-full bg-white/90 hover:bg-white text-zinc-800 shadow"
-                              title="Yuklab olish"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
+                            <div className="flex justify-between items-center pointer-events-auto">
+                              <span className="text-white text-xs font-semibold drop-shadow truncate max-w-[120px]">
+                                {pin.title}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {pin.comments?.length > 0 && (
+                                  <span className="px-2 py-1 rounded-full bg-white/80 text-zinc-800 text-[11px] font-bold flex items-center gap-1">
+                                    <MessageCircle className="w-3 h-3" />
+                                    {pin.comments.length}
+                                  </span>
+                                )}
+                                <button 
+                                  onClick={(e) => handleDownload(pin.imageUrl, e)}
+                                  className="p-2 rounded-full bg-white/90 hover:bg-white text-zinc-800 shadow"
+                                  title="Yuklab olish"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
+                        </div>
+
+                        {/* Kim yuklagani ma'lumoti */}
+                        <div className="p-2.5 flex items-center gap-2">
+                          {pin.userPhoto ? (
+                            <img src={pin.userPhoto} alt={pin.userName} className="w-6 h-6 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center">
+                              {pin.userName?.[0] || 'U'}
+                            </div>
+                          )}
+                          <span className="text-xs font-medium text-zinc-700 truncate">{pin.userName}</span>
                         </div>
                       </div>
                     );
@@ -373,28 +426,26 @@ export default function App() {
             </div>
           )}
 
-          {/* 2. Bildirishnomalar sahifasi */}
+          {/* Bildirishnomalar */}
           {activeTab === 'notifications' && (
             <div className="max-w-2xl mx-auto py-4">
               <h1 className="text-2xl font-bold mb-6">Bildirishnomalar</h1>
-              <div className="space-y-3">
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold">
-                      P
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">Tizim yangilandi</p>
-                      <p className="text-xs text-zinc-500">Pinterest Uz loyihangiz muvaffaqiyatli ishga tushdi!</p>
-                    </div>
+              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold">
+                    P
                   </div>
-                  <span className="text-xs text-zinc-400">Hozirgina</span>
+                  <div>
+                    <p className="text-sm font-semibold">Tizim yangilandi</p>
+                    <p className="text-xs text-zinc-500">Muhokama va profil ma'lumotlari faollashtirildi!</p>
+                  </div>
                 </div>
+                <span className="text-xs text-zinc-400">Hozirgina</span>
               </div>
             </div>
           )}
 
-          {/* 3. Xabarlar sahifasi */}
+          {/* Umumiy Xabarlar */}
           {activeTab === 'messages' && (
             <div className="max-w-2xl mx-auto h-[75vh] flex flex-col bg-zinc-50 border border-zinc-200 rounded-3xl overflow-hidden shadow-sm">
               <div className="p-4 bg-white border-b border-zinc-200 font-bold">
@@ -489,6 +540,16 @@ export default function App() {
                 />
               </div>
 
+              <div>
+                <textarea 
+                  placeholder="Tavsif (ixtiyoriy)..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows="2"
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 focus:border-red-500 outline-none text-sm"
+                />
+              </div>
+
               <button 
                 type="submit" 
                 disabled={isUploading || !imageUrl}
@@ -501,47 +562,125 @@ export default function App() {
         </div>
       )}
 
-      {/* Rasm ko'rish modali */}
+      {/* Rasm ko'rish va MUHOKAMA (Chat) Modali */}
       {selectedPin && (
         <div 
           onClick={() => setSelectedPin(null)} 
-          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-4xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row shadow-2xl"
+            className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row shadow-2xl"
           >
-            <div className="md:w-3/5 bg-black flex items-center justify-center">
-              <img src={selectedPin.imageUrl} alt={selectedPin.title} className="max-h-[85vh] w-full object-contain" />
+            {/* Chap tomon: Rasm */}
+            <div className="md:w-3/5 bg-zinc-950 flex items-center justify-center p-2">
+              <img src={selectedPin.imageUrl} alt={selectedPin.title} className="max-h-[82vh] w-full object-contain rounded-xl" />
             </div>
-            <div className="md:w-2/5 p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-center mb-6">
-                  <button 
-                    onClick={(e) => handleDownload(selectedPin.imageUrl, e)}
-                    className="p-2.5 rounded-full hover:bg-zinc-100 text-zinc-700"
-                    title="Yuklab olish"
-                  >
-                    <Download className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={(e) => handleToggleSave(selectedPin, e)}
-                    className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full text-sm"
-                  >
-                    {selectedPin.saves?.includes(user?.uid) ? 'Saqlandi' : 'Saqlash'}
-                  </button>
+
+            {/* O'ng tomon: Ma'lumot va Muhokama Chat */}
+            <div className="md:w-2/5 p-6 flex flex-col justify-between h-[82vh] bg-white">
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Tepasi: Tugmalar */}
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={(e) => handleDownload(selectedPin.imageUrl, e)}
+                      className="p-2.5 rounded-full hover:bg-zinc-100 text-zinc-700 border border-zinc-200"
+                      title="Yuklab olish"
+                    >
+                      <Download className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={(e) => handleToggleSave(selectedPin, e)}
+                      className={`px-5 py-2.5 rounded-full font-bold text-sm shadow transition ${
+                        selectedPin.saves?.includes(user?.uid) 
+                          ? 'bg-zinc-950 text-white' 
+                          : 'bg-red-600 hover:bg-red-700 text-white'
+                      }`}
+                    >
+                      {selectedPin.saves?.includes(user?.uid) ? 'Saqlandi' : 'Saqlash'}
+                    </button>
+                    <button 
+                      onClick={() => setSelectedPin(null)}
+                      className="p-2 rounded-full hover:bg-zinc-100 text-zinc-500"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
-                <h1 className="text-2xl font-bold mb-2">{selectedPin.title}</h1>
-                <div className="text-xs text-zinc-400">
-                  Yuklovchi: <span className="font-semibold text-zinc-700">{selectedPin.userName}</span>
+
+                {/* Sarlavha va Tavsif */}
+                <h1 className="text-xl font-bold mb-1">{selectedPin.title}</h1>
+                {selectedPin.description && (
+                  <p className="text-zinc-600 text-xs mb-3">{selectedPin.description}</p>
+                )}
+
+                {/* Kim yuklagani */}
+                <div className="flex items-center gap-3 py-3 border-y border-zinc-100 my-2">
+                  {selectedPin.userPhoto ? (
+                    <img src={selectedPin.userPhoto} alt={selectedPin.userName} className="w-9 h-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 font-bold flex items-center justify-center">
+                      {selectedPin.userName?.[0] || 'U'}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-bold text-zinc-800">{selectedPin.userName}</p>
+                    <p className="text-[11px] text-zinc-400">Muallif</p>
+                  </div>
+                </div>
+
+                {/* Muhokama (Kommentariyalar) ro'yxati */}
+                <div className="flex-1 overflow-y-auto pr-1 space-y-3 mt-2">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                    Muhokama ({selectedPin.comments?.length || 0})
+                  </h3>
+                  
+                  {(!selectedPin.comments || selectedPin.comments.length === 0) ? (
+                    <p className="text-xs text-zinc-400 py-4 text-center">Fikr bildirilmagan. Birinchi bo'lib yozing!</p>
+                  ) : (
+                    selectedPin.comments.map(c => (
+                      <div key={c.id} className="flex items-start gap-2 text-xs">
+                        {c.userPhoto ? (
+                          <img src={c.userPhoto} alt={c.userName} className="w-6 h-6 rounded-full object-cover mt-0.5" />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-zinc-200 text-zinc-700 font-bold text-[10px] flex items-center justify-center mt-0.5">
+                            {c.userName?.[0] || 'U'}
+                          </div>
+                        )}
+                        <div className="flex-1 bg-zinc-50 border border-zinc-100 p-2.5 rounded-2xl">
+                          <div className="flex justify-between items-center mb-0.5">
+                            <span className="font-bold text-zinc-800">{c.userName}</span>
+                            <span className="text-[9px] text-zinc-400">{c.createdAt}</span>
+                          </div>
+                          <p className="text-zinc-600">{c.text}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
-              <button 
-                onClick={() => setSelectedPin(null)} 
-                className="w-full mt-6 py-2.5 border border-zinc-200 rounded-full font-bold text-sm hover:bg-zinc-50"
-              >
-                Yopish
-              </button>
+
+              {/* Muhokama chatiga xabar yozish formasi */}
+              <form onSubmit={handleAddComment} className="pt-3 border-t border-zinc-100 flex items-center gap-2 mt-2">
+                <input 
+                  type="text" 
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Fikr bildiring..." 
+                  className="flex-1 px-4 py-2.5 bg-zinc-100 rounded-full text-xs outline-none focus:bg-white focus:border focus:border-red-500 transition"
+                />
+                <button 
+                  type="submit" 
+                  disabled={!commentText.trim()}
+                  className="p-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-full transition"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+
             </div>
           </div>
         </div>
