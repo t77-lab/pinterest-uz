@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, onSnapshot, 
-  query, orderBy, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove 
+  query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove 
 } from 'firebase/firestore';
 import { 
   getAuth, signInAnonymously, onAuthStateChanged, 
@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { 
   Search, Bell, MessageSquare, Plus, Download, 
-  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send, MessageCircle
+  Camera, Mic, LogIn, LogOut, X, Bookmark, Home, Send, MessageCircle, User, Trash2, Eye, EyeOff
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -30,19 +30,17 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [pins, setPins] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('feed'); // 'feed' | 'saved' | 'notifications' | 'messages'
+  const [activeTab, setActiveTab] = useState('feed'); // 'feed' | 'saved' | 'my-pins' | 'notifications' | 'messages'
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedPin, setSelectedPin] = useState(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [isAnonymousPost, setIsAnonymousPost] = useState(false); // Anonim yoki ochiq tanlovi
   const [isUploading, setIsUploading] = useState(false);
 
-  // Izoh (muhokama) uchun holat
   const [commentText, setCommentText] = useState('');
-
-  // Xabarlar bo'limi holati
   const [messages, setMessages] = useState([
     { id: 1, sender: 'Pinterest Bot', text: 'Pinterest Uz platformasiga xush kelibsiz!', time: '14:20' }
   ]);
@@ -65,7 +63,6 @@ export default function App() {
       const pinsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setPins(pinsData);
       
-      // Agar ochiq turgan rasm bo'lsa, uning izohlarini ham yangilab borish
       setSelectedPin(prev => {
         if (!prev) return null;
         return pinsData.find(p => p.id === prev.id) || prev;
@@ -123,27 +120,51 @@ export default function App() {
     if (!imageUrl) return alert("Rasm tanlang!");
 
     setIsUploading(true);
+
+    // Foydalanuvchi tanloviga qarab ism va suratni belgilash
+    const authorName = isAnonymousPost 
+      ? 'Anonim' 
+      : (user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'));
+      
+    const authorPhoto = isAnonymousPost ? '' : (user?.photoURL || '');
+
     try {
       await addDoc(collection(db, 'pins'), {
         title: title || 'Nomsiz rasm',
         description: description || '',
         imageUrl: imageUrl,
         userId: user?.uid || 'anon',
-        userName: user?.displayName || (user?.isAnonymous ? 'Mehmon' : 'Foydalanuvchi'),
-        userPhoto: user?.photoURL || '',
+        userName: authorName,
+        userPhoto: authorPhoto,
+        isAnonymous: isAnonymousPost,
         saves: [],
-        comments: [], // Muhokama chatlari uchun massiv
+        comments: [],
         createdAt: serverTimestamp()
       });
       setTitle('');
       setDescription('');
       setImageUrl('');
+      setIsAnonymousPost(false);
       setIsAddModalOpen(false);
-      setActiveTab('feed');
+      setActiveTab('my-pins');
     } catch (err) {
       alert("Yuklashda xatolik: " + err.message);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDeletePin = async (pinId, e) => {
+    e?.stopPropagation();
+    if (!window.confirm("Rostdan ham bu rasmni o'chirmoqchimisiz?")) return;
+
+    try {
+      await deleteDoc(doc(db, 'pins', pinId));
+      if (selectedPin?.id === pinId) {
+        setSelectedPin(null);
+      }
+    } catch (err) {
+      alert("O'chirishda xatolik: " + err.message);
     }
   };
 
@@ -171,7 +192,6 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // Muhokamaga izoh qo'shish
   const handleAddComment = async (e) => {
     e.preventDefault();
     if (!commentText.trim() || !selectedPin) return;
@@ -215,6 +235,9 @@ export default function App() {
     if (activeTab === 'saved') {
       return matchesSearch && pin.saves?.includes(user?.uid);
     }
+    if (activeTab === 'my-pins') {
+      return matchesSearch && pin.userId === user?.uid;
+    }
     return matchesSearch;
   });
 
@@ -246,6 +269,14 @@ export default function App() {
             title="Saqlanganlar"
           >
             <Bookmark className="w-5 h-5" />
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('my-pins')} 
+            className={`p-3 rounded-2xl transition ${activeTab === 'my-pins' ? 'bg-zinc-950 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
+            title="Men yuklagan rasmlar"
+          >
+            <User className="w-5 h-5" />
           </button>
 
           <button 
@@ -299,7 +330,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Asosiy qism */}
+      {/* Asosiy Ish Maydoni */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Header */}
@@ -327,38 +358,45 @@ export default function App() {
           </div>
         </header>
 
-        {/* Kontent */}
+        {/* Asosiy Kontent */}
         <main className="flex-1 overflow-y-auto px-6 py-6">
           
-          {(activeTab === 'feed' || activeTab === 'saved') && (
+          {(activeTab === 'feed' || activeTab === 'saved' || activeTab === 'my-pins') && (
             <div>
               <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold">
-                  {activeTab === 'feed' ? 'Barcha Rasmlar' : 'Saqlangan Pinlar'}
-                </h1>
-                {activeTab === 'saved' && (
-                  <span className="text-sm text-zinc-500 font-medium">{displayedPins.length} ta saqlangan</span>
-                )}
+                <div>
+                  <h1 className="text-2xl font-bold">
+                    {activeTab === 'feed' && 'Barcha Rasmlar'}
+                    {activeTab === 'saved' && 'Saqlangan Pinlar'}
+                    {activeTab === 'my-pins' && 'Men yuklagan rasmlar'}
+                  </h1>
+                  {activeTab === 'my-pins' && (
+                    <p className="text-xs text-zinc-500 mt-1">Siz tomoningizdan joylangan rasmlar (anonim yoki ochiq)</p>
+                  )}
+                </div>
+                <span className="text-sm text-zinc-500 font-medium">{displayedPins.length} ta pin</span>
               </div>
 
               {displayedPins.length === 0 ? (
                 <div className="h-64 flex flex-col items-center justify-center text-zinc-400">
                   <p className="text-lg">
-                    {activeTab === 'saved' ? "Siz hali hech qanday rasm saqlamadingiz" : "Hozircha rasmlar yo'q"}
+                    {activeTab === 'saved' && "Siz hali hech qanday rasm saqlamadingiz"}
+                    {activeTab === 'my-pins' && "Siz hali rasm yuklamadingiz"}
+                    {activeTab === 'feed' && "Hozircha rasmlar yo'q"}
                   </p>
-                  {activeTab === 'feed' && (
-                    <button 
-                      onClick={() => setIsAddModalOpen(true)}
-                      className="mt-3 px-5 py-2.5 bg-red-600 text-white rounded-full text-sm font-semibold hover:bg-red-700 transition"
-                    >
-                      Birinchi rasmni yuklang
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="mt-3 px-5 py-2.5 bg-red-600 text-white rounded-full text-sm font-semibold hover:bg-red-700 transition"
+                  >
+                    Rasm yuklash
+                  </button>
                 </div>
               ) : (
                 <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4">
                   {displayedPins.map((pin) => {
                     const isSaved = pin.saves?.includes(user?.uid);
+                    const isOwner = pin.userId === user?.uid;
+
                     return (
                       <div 
                         key={pin.id}
@@ -372,8 +410,18 @@ export default function App() {
                             className="w-full object-cover rounded-2xl group-hover:brightness-95 transition"
                           />
 
-                          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-between pointer-events-none rounded-2xl">
-                            <div className="flex justify-end pointer-events-auto">
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-between pointer-events-none rounded-2xl">
+                            <div className="flex justify-between items-center pointer-events-auto">
+                              {isOwner ? (
+                                <button 
+                                  onClick={(e) => handleDeletePin(pin.id, e)}
+                                  className="p-2 rounded-full bg-white/90 hover:bg-red-600 hover:text-white text-zinc-700 shadow transition"
+                                  title="O'chirish"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : <span />}
+
                               <button 
                                 onClick={(e) => handleToggleSave(pin, e)}
                                 className={`px-4 py-2 rounded-full font-bold text-xs shadow transition ${
@@ -390,7 +438,7 @@ export default function App() {
                               </span>
                               <div className="flex items-center gap-1.5">
                                 {pin.comments?.length > 0 && (
-                                  <span className="px-2 py-1 rounded-full bg-white/80 text-zinc-800 text-[11px] font-bold flex items-center gap-1">
+                                  <span className="px-2 py-1 rounded-full bg-white/90 text-zinc-800 text-[11px] font-bold flex items-center gap-1 shadow">
                                     <MessageCircle className="w-3 h-3" />
                                     {pin.comments.length}
                                   </span>
@@ -407,16 +455,27 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Kim yuklagani ma'lumoti */}
-                        <div className="p-2.5 flex items-center gap-2">
-                          {pin.userPhoto ? (
-                            <img src={pin.userPhoto} alt={pin.userName} className="w-6 h-6 rounded-full object-cover" />
-                          ) : (
-                            <div className="w-6 h-6 rounded-full bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center">
-                              {pin.userName?.[0] || 'U'}
-                            </div>
+                        {/* Kim yuklagani haqida */}
+                        <div className="p-2.5 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {pin.isAnonymous ? (
+                              <div className="w-6 h-6 rounded-full bg-zinc-800 text-white flex items-center justify-center">
+                                <EyeOff className="w-3 h-3" />
+                              </div>
+                            ) : pin.userPhoto ? (
+                              <img src={pin.userPhoto} alt={pin.userName} className="w-6 h-6 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-zinc-200 text-zinc-700 font-bold text-xs flex items-center justify-center">
+                                {pin.userName?.[0] || 'U'}
+                              </div>
+                            )}
+                            <span className="text-xs font-medium text-zinc-700 truncate max-w-[100px]">
+                              {pin.userName}
+                            </span>
+                          </div>
+                          {isOwner && (
+                            <span className="text-[10px] bg-zinc-100 text-zinc-500 font-bold px-1.5 py-0.5 rounded">Siz</span>
                           )}
-                          <span className="text-xs font-medium text-zinc-700 truncate">{pin.userName}</span>
                         </div>
                       </div>
                     );
@@ -437,7 +496,7 @@ export default function App() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Tizim yangilandi</p>
-                    <p className="text-xs text-zinc-500">Muhokama va profil ma'lumotlari faollashtirildi!</p>
+                    <p className="text-xs text-zinc-500">Anonim yuklash funksiyasi qo'shildi!</p>
                   </div>
                 </div>
                 <span className="text-xs text-zinc-400">Hozirgina</span>
@@ -445,7 +504,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Umumiy Xabarlar */}
+          {/* Xabarlar */}
           {activeTab === 'messages' && (
             <div className="max-w-2xl mx-auto h-[75vh] flex flex-col bg-zinc-50 border border-zinc-200 rounded-3xl overflow-hidden shadow-sm">
               <div className="p-4 bg-white border-b border-zinc-200 font-bold">
@@ -487,7 +546,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* Rasm qo'shish oynasi */}
+      {/* Rasm qo'shish oynasi (SHAXSINI OCHIQ QILISH YOKI ANONIM TANLOVI BILAN) */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl relative">
@@ -525,7 +584,7 @@ export default function App() {
               </div>
 
               {imageUrl && (
-                <div className="h-44 w-full rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 flex items-center justify-center">
+                <div className="h-40 w-full rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 flex items-center justify-center">
                   <img src={imageUrl} alt="Preview" className="h-full w-full object-contain" />
                 </div>
               )}
@@ -550,6 +609,45 @@ export default function App() {
                 />
               </div>
 
+              {/* Shaxsni ko'rsatish yoki anonim qilish tanlovi */}
+              <div className="p-3 bg-zinc-50 rounded-2xl border border-zinc-200">
+                <span className="block text-xs font-bold text-zinc-700 mb-2">
+                  Shaxsingiz qanday ko'rinsin?
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAnonymousPost(false)}
+                    className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition ${
+                      !isAnonymousPost 
+                        ? 'bg-zinc-950 text-white border-zinc-950 shadow-sm' 
+                        : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <Eye className="w-4 h-4" />
+                    Ochiq profil
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAnonymousPost(true)}
+                    className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition ${
+                      isAnonymousPost 
+                        ? 'bg-zinc-950 text-white border-zinc-950 shadow-sm' 
+                        : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                    }`}
+                  >
+                    <EyeOff className="w-4 h-4" />
+                    Anonim (Maxfiy)
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-2 text-center">
+                  {isAnonymousPost 
+                    ? "Ismingiz va profilingiz yashiriladi, 'Anonim' deb chiqadi." 
+                    : `Profilingiz (${user?.displayName || 'Ismingiz'}) ochiq ko'rsatiladi.`}
+                </p>
+              </div>
+
               <button 
                 type="submit" 
                 disabled={isUploading || !imageUrl}
@@ -562,7 +660,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Rasm ko'rish va MUHOKAMA (Chat) Modali */}
+      {/* Rasm ko'rish va Muhokama Modali */}
       {selectedPin && (
         <div 
           onClick={() => setSelectedPin(null)} 
@@ -572,15 +670,12 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row shadow-2xl"
           >
-            {/* Chap tomon: Rasm */}
             <div className="md:w-3/5 bg-zinc-950 flex items-center justify-center p-2">
               <img src={selectedPin.imageUrl} alt={selectedPin.title} className="max-h-[82vh] w-full object-contain rounded-xl" />
             </div>
 
-            {/* O'ng tomon: Ma'lumot va Muhokama Chat */}
             <div className="md:w-2/5 p-6 flex flex-col justify-between h-[82vh] bg-white">
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Tepasi: Tugmalar */}
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <button 
@@ -590,6 +685,15 @@ export default function App() {
                     >
                       <Download className="w-5 h-5" />
                     </button>
+                    {selectedPin.userId === user?.uid && (
+                      <button 
+                        onClick={(e) => handleDeletePin(selectedPin.id, e)}
+                        className="p-2.5 rounded-full hover:bg-red-50 text-red-600 border border-red-200"
+                        title="O'chirish"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button 
@@ -611,15 +715,17 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Sarlavha va Tavsif */}
                 <h1 className="text-xl font-bold mb-1">{selectedPin.title}</h1>
                 {selectedPin.description && (
                   <p className="text-zinc-600 text-xs mb-3">{selectedPin.description}</p>
                 )}
 
-                {/* Kim yuklagani */}
                 <div className="flex items-center gap-3 py-3 border-y border-zinc-100 my-2">
-                  {selectedPin.userPhoto ? (
+                  {selectedPin.isAnonymous ? (
+                    <div className="w-9 h-9 rounded-full bg-zinc-900 text-white flex items-center justify-center">
+                      <EyeOff className="w-4 h-4" />
+                    </div>
+                  ) : selectedPin.userPhoto ? (
                     <img src={selectedPin.userPhoto} alt={selectedPin.userName} className="w-9 h-9 rounded-full object-cover" />
                   ) : (
                     <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 font-bold flex items-center justify-center">
@@ -628,11 +734,12 @@ export default function App() {
                   )}
                   <div>
                     <p className="text-sm font-bold text-zinc-800">{selectedPin.userName}</p>
-                    <p className="text-[11px] text-zinc-400">Muallif</p>
+                    <p className="text-[11px] text-zinc-400">
+                      {selectedPin.isAnonymous ? "Maxfiy yuklangan" : "Muallif"}
+                    </p>
                   </div>
                 </div>
 
-                {/* Muhokama (Kommentariyalar) ro'yxati */}
                 <div className="flex-1 overflow-y-auto pr-1 space-y-3 mt-2">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     Muhokama ({selectedPin.comments?.length || 0})
@@ -663,7 +770,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Muhokama chatiga xabar yozish formasi */}
               <form onSubmit={handleAddComment} className="pt-3 border-t border-zinc-100 flex items-center gap-2 mt-2">
                 <input 
                   type="text" 
